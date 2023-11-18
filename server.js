@@ -23,19 +23,35 @@ async function fetchApiData(species) {
     return apiResponse.data;
 }
 
-async function getSpeciesData(req, res) {
+// redis cache middleware function
+async function cacheData(req, res, next) {
     const species = req.params.species;
     let result;
-    let isCached = false;
 
     try {
-        // checking if its in redis cache in if condition
+        // checking if its in redis cache
         const cacheResults = await redisClient.get(species)
         if(cacheResults) {
             isCached = true;
             result = JSON.parse(cacheResults)
+            res.send({
+                fromCache: true,
+                data: result
+            })
         } else {
-            // if redis doesn't have the data set data into redis
+            next()
+        }
+    } catch (error) {
+        console.error(error)
+        res.status(404)
+    }
+}
+
+async function getSpeciesData(req, res) {
+    const species = req.params.species;
+    let result;
+
+    try {
             result = await fetchApiData(species)
             if(result.length === 0) throw "No Data Found!"
 
@@ -43,11 +59,9 @@ async function getSpeciesData(req, res) {
                 EX: 180,
                 NX: true
             })
-        }
 
-        // sending data
         res.send({
-            fromCache: isCached, 
+            fromCache: false, 
             data:result
         })
     } catch (error) {
@@ -56,7 +70,7 @@ async function getSpeciesData(req, res) {
     }
 }
 
-app.get("/fish/:species", getSpeciesData)
+app.get("/fish/:species", cacheData, getSpeciesData)
 
 app.listen(port, () => {
     console.log(`App listening on port ${port}`)
